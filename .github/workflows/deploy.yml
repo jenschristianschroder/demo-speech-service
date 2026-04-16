@@ -76,7 +76,7 @@ jobs:
 
           if [ -z "$ACR_LOGIN_SERVER" ]; then
             # Retry for up to 2 minutes to allow ACR creation to settle after deployment.
-            for i in $(seq 1 "$MAX_ACR_LOOKUP_ATTEMPTS"); do
+            for _ in $(seq 1 "$MAX_ACR_LOOKUP_ATTEMPTS"); do
               ACR_LOGIN_SERVER="$(az acr list --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" --query "[0].loginServer" -o tsv)"
               [ -n "$ACR_LOGIN_SERVER" ] && break
               sleep "$ACR_LOOKUP_SLEEP_SECONDS"
