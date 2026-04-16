@@ -19,7 +19,7 @@ param imageTag string
 
 // ─── Derived names ───────────────────────────────────────────────────────────
 
-var acrName = replace('${appName}acr', '-', '')
+var acrName = '${replace('${appName}acr', '-', '')}${uniqueString(resourceGroup().id)}'
 var envName = '${appName}-env'
 var identityName = '${appName}-identity'
 var apiAppName = '${appName}-api'
