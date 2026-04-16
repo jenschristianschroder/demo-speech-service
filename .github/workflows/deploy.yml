@@ -54,12 +54,24 @@ jobs:
             ${{ secrets.AZURE_SPEECH_RESOURCE_ID != '' && format('speechResourceId={0}', secrets.AZURE_SPEECH_RESOURCE_ID) || '' }}
           failOnStdErr: false
 
+      - name: Validate infra deployment failure reason
+        if: steps.infra.outcome == 'failure'
+        run: |
+          DEPLOYMENT_ERROR="$(az deployment group show --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" --name main --query properties.error -o json)"
+          echo "$DEPLOYMENT_ERROR"
+
+          if ! echo "$DEPLOYMENT_ERROR" | grep -q 'MANIFEST_UNKNOWN'; then
+            echo "::error::Infra deployment failed for an unexpected reason."
+            exit 1
+          fi
+
       - name: Resolve ACR login server
         id: acr
         run: |
           ACR_LOGIN_SERVER="${{ steps.infra.outputs.acrLoginServer }}"
 
           if [ -z "$ACR_LOGIN_SERVER" ]; then
+            # Retry for up to 2 minutes to allow ACR creation to settle after deployment.
             for i in {1..12}; do
               ACR_LOGIN_SERVER="$(az acr list --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" --query "[0].loginServer" -o tsv)"
               [ -n "$ACR_LOGIN_SERVER" ] && break
