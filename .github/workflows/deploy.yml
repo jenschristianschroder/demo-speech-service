@@ -11,6 +11,7 @@ permissions:
 
 env:
   APP_NAME: speech-service
+  INFRA_DEPLOYMENT_NAME: speech-service-infra
 
 jobs:
   deploy:
@@ -46,6 +47,7 @@ jobs:
         id: infra
         continue-on-error: true
         with:
+          deploymentName: ${{ env.INFRA_DEPLOYMENT_NAME }}
           resourceGroupName: ${{ secrets.AZURE_RESOURCE_GROUP }}
           template: infra/main.bicep
           parameters: >-
@@ -57,7 +59,7 @@ jobs:
       - name: Validate infra deployment failure reason
         if: steps.infra.outcome == 'failure'
         run: |
-          DEPLOYMENT_ERROR="$(az deployment group show --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" --name main --query properties.error -o json)"
+          DEPLOYMENT_ERROR="$(az deployment group show --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" --name "${{ env.INFRA_DEPLOYMENT_NAME }}" --query properties.error -o json)"
           echo "$DEPLOYMENT_ERROR"
 
           if ! echo "$DEPLOYMENT_ERROR" | grep -q 'MANIFEST_UNKNOWN'; then
@@ -68,14 +70,16 @@ jobs:
       - name: Resolve ACR login server
         id: acr
         run: |
+          MAX_ACR_LOOKUP_ATTEMPTS=12
+          ACR_LOOKUP_SLEEP_SECONDS=10
           ACR_LOGIN_SERVER="${{ steps.infra.outputs.acrLoginServer }}"
 
           if [ -z "$ACR_LOGIN_SERVER" ]; then
             # Retry for up to 2 minutes to allow ACR creation to settle after deployment.
-            for i in {1..12}; do
+            for i in $(seq 1 "$MAX_ACR_LOOKUP_ATTEMPTS"); do
               ACR_LOGIN_SERVER="$(az acr list --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" --query "[0].loginServer" -o tsv)"
               [ -n "$ACR_LOGIN_SERVER" ] && break
-              sleep 10
+              sleep "$ACR_LOOKUP_SLEEP_SECONDS"
             done
           fi
 
