@@ -27,6 +27,13 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      # ─── Ensure resource group exists ──────────────────────────────────
+      - name: Ensure Resource Group exists
+        run: |
+          az group create \
+            --name "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --location "${{ vars.AZURE_LOCATION }}"
+
       # ─── Deploy infrastructure (creates ACR if needed) ───────────────
       - name: Deploy Bicep (infra only — placeholder images)
         uses: azure/arm-deploy@v2
@@ -35,9 +42,9 @@ jobs:
           resourceGroupName: ${{ secrets.AZURE_RESOURCE_GROUP }}
           template: infra/main.bicep
           parameters: >-
-            speechRegion=${{ secrets.AZURE_SPEECH_REGION }}
-            speechResourceId=${{ secrets.AZURE_SPEECH_RESOURCE_ID }}
             imageTag=${{ github.sha }}
+            ${{ secrets.AZURE_SPEECH_REGION != '' && format('speechRegion={0}', secrets.AZURE_SPEECH_REGION) || '' }}
+            ${{ secrets.AZURE_SPEECH_RESOURCE_ID != '' && format('speechResourceId={0}', secrets.AZURE_SPEECH_RESOURCE_ID) || '' }}
           failOnStdErr: false
 
       # ─── Build & push container images ───────────────────────────────
