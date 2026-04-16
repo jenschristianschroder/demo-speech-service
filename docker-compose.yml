@@ -1,0 +1,19 @@
+services:
+  speech-service-spa:
+    build: .
+    ports:
+      - "3000:80"
+    environment:
+      - API_BACKEND_URL=http://speech-service-api:3001
+    depends_on:
+      - speech-service-api
+
+  speech-service-api:
+    build: ./services/api
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - AZURE_SPEECH_REGION=${AZURE_SPEECH_REGION}
+      - AZURE_SPEECH_ENDPOINT=${AZURE_SPEECH_ENDPOINT}
+      - CORS_ORIGIN=*
