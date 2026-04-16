@@ -44,6 +44,7 @@ jobs:
       - name: Deploy Bicep (infra only — placeholder images)
         uses: azure/arm-deploy@v2
         id: infra
+        continue-on-error: true
         with:
           resourceGroupName: ${{ secrets.AZURE_RESOURCE_GROUP }}
           template: infra/main.bicep
@@ -53,19 +54,39 @@ jobs:
             ${{ secrets.AZURE_SPEECH_RESOURCE_ID != '' && format('speechResourceId={0}', secrets.AZURE_SPEECH_RESOURCE_ID) || '' }}
           failOnStdErr: false
 
+      - name: Resolve ACR login server
+        id: acr
+        run: |
+          ACR_LOGIN_SERVER="${{ steps.infra.outputs.acrLoginServer }}"
+
+          if [ -z "$ACR_LOGIN_SERVER" ]; then
+            for i in {1..12}; do
+              ACR_LOGIN_SERVER="$(az acr list --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" --query "[0].loginServer" -o tsv)"
+              [ -n "$ACR_LOGIN_SERVER" ] && break
+              sleep 10
+            done
+          fi
+
+          if [ -z "$ACR_LOGIN_SERVER" ]; then
+            echo "::error::Unable to resolve ACR login server from deployment output or resource group."
+            exit 1
+          fi
+
+          echo "acrLoginServer=$ACR_LOGIN_SERVER" >> "$GITHUB_OUTPUT"
+
       # ─── Build & push container images ───────────────────────────────
       - name: ACR Login
-        run: az acr login --name $(echo "${{ steps.infra.outputs.acrLoginServer }}" | cut -d. -f1)
+        run: az acr login --name $(echo "${{ steps.acr.outputs.acrLoginServer }}" | cut -d. -f1)
 
       - name: Build & push API image
         run: |
-          docker build -t ${{ steps.infra.outputs.acrLoginServer }}/${{ env.APP_NAME }}-api:${{ github.sha }} ./services/api
-          docker push ${{ steps.infra.outputs.acrLoginServer }}/${{ env.APP_NAME }}-api:${{ github.sha }}
+          docker build -t ${{ steps.acr.outputs.acrLoginServer }}/${{ env.APP_NAME }}-api:${{ github.sha }} ./services/api
+          docker push ${{ steps.acr.outputs.acrLoginServer }}/${{ env.APP_NAME }}-api:${{ github.sha }}
 
       - name: Build & push SPA image
         run: |
-          docker build -t ${{ steps.infra.outputs.acrLoginServer }}/${{ env.APP_NAME }}-spa:${{ github.sha }} .
-          docker push ${{ steps.infra.outputs.acrLoginServer }}/${{ env.APP_NAME }}-spa:${{ github.sha }}
+          docker build -t ${{ steps.acr.outputs.acrLoginServer }}/${{ env.APP_NAME }}-spa:${{ github.sha }} .
+          docker push ${{ steps.acr.outputs.acrLoginServer }}/${{ env.APP_NAME }}-spa:${{ github.sha }}
 
       # ─── Update container apps with new images ──────────────────────
       - name: Update API Container App
@@ -73,14 +94,16 @@ jobs:
           az containerapp update \
             --name ${{ env.APP_NAME }}-api \
             --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --image ${{ steps.infra.outputs.acrLoginServer }}/${{ env.APP_NAME }}-api:${{ github.sha }}
+            --image ${{ steps.acr.outputs.acrLoginServer }}/${{ env.APP_NAME }}-api:${{ github.sha }}
 
       - name: Update SPA Container App
         run: |
           az containerapp update \
             --name ${{ env.APP_NAME }}-spa \
             --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --image ${{ steps.infra.outputs.acrLoginServer }}/${{ env.APP_NAME }}-spa:${{ github.sha }}
+            --image ${{ steps.acr.outputs.acrLoginServer }}/${{ env.APP_NAME }}-spa:${{ github.sha }}
 
       - name: Output SPA URL
-        run: echo "🚀 SPA deployed to ${{ steps.infra.outputs.spaUrl }}"
+        run: |
+          SPA_FQDN="$(az containerapp show --name ${{ env.APP_NAME }}-spa --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)"
+          echo "🚀 SPA deployed to https://${SPA_FQDN}"
