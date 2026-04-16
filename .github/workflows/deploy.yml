@@ -30,9 +30,15 @@ jobs:
       # ─── Ensure resource group exists ──────────────────────────────────
       - name: Ensure Resource Group exists
         run: |
+          if [ -z "$LOCATION" ]; then
+            echo "::error::AZURE_LOCATION repository variable is not set. Configure it in Settings → Variables → Actions."
+            exit 1
+          fi
           az group create \
             --name "${{ secrets.AZURE_RESOURCE_GROUP }}" \
-            --location "${{ vars.AZURE_LOCATION }}"
+            --location "$LOCATION"
+        env:
+          LOCATION: ${{ vars.AZURE_LOCATION }}
 
       # ─── Deploy infrastructure (creates ACR if needed) ───────────────
       - name: Deploy Bicep (infra only — placeholder images)
