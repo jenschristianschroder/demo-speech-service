@@ -15,7 +15,7 @@ speakerRouter.post('/profiles', async (req: Request, res: Response): Promise<voi
     const baseUrl = getSpeakerRecognitionBaseUrl();
 
     const upstream = await fetch(
-      `${baseUrl}/speaker-recognition/identification/text-independent/profiles?api-version=2024-11-15`,
+      `${baseUrl}/speaker-recognition/identification/text-independent/profiles?api-version=2021-09-05`,
       {
         method: 'POST',
         headers: {
@@ -59,7 +59,7 @@ speakerRouter.post('/profiles/:profileId/enroll', async (req: Request, res: Resp
     const audioBuffer = Buffer.concat(chunks);
 
     const upstream = await fetch(
-      `${baseUrl}/speaker-recognition/identification/text-independent/profiles/${encodeURIComponent(profileId)}/enrollments?api-version=2024-11-15`,
+      `${baseUrl}/speaker-recognition/identification/text-independent/profiles/${encodeURIComponent(profileId)}/enrollments?api-version=2021-09-05`,
       {
         method: 'POST',
         headers: {
@@ -109,7 +109,7 @@ speakerRouter.post('/identify', async (req: Request, res: Response): Promise<voi
     const audioBuffer = Buffer.concat(chunks);
 
     const upstream = await fetch(
-      `${baseUrl}/speaker-recognition/identification/text-independent/profiles/identifySingleSpeaker?api-version=2024-11-15&profileIds=${encodeURIComponent(profileIds)}`,
+      `${baseUrl}/speaker-recognition/identification/text-independent/profiles/identifySingleSpeaker?api-version=2021-09-05&profileIds=${encodeURIComponent(profileIds)}`,
       {
         method: 'POST',
         headers: {
@@ -145,7 +145,7 @@ speakerRouter.delete('/profiles/:profileId', async (req: Request, res: Response)
     const baseUrl = getSpeakerRecognitionBaseUrl();
 
     const upstream = await fetch(
-      `${baseUrl}/speaker-recognition/identification/text-independent/profiles/${encodeURIComponent(profileId)}?api-version=2024-11-15`,
+      `${baseUrl}/speaker-recognition/identification/text-independent/profiles/${encodeURIComponent(profileId)}?api-version=2021-09-05`,
       {
         method: 'DELETE',
         headers: {
@@ -190,7 +190,7 @@ speakerRouter.post('/profiles/delete-batch', async (req: Request, res: Response)
       profileIds.map(async (profileId) => {
         try {
           const upstream = await fetch(
-            `${baseUrl}/speaker-recognition/identification/text-independent/profiles/${encodeURIComponent(profileId)}?api-version=2024-11-15`,
+            `${baseUrl}/speaker-recognition/identification/text-independent/profiles/${encodeURIComponent(profileId)}?api-version=2021-09-05`,
             {
               method: 'DELETE',
               headers: { Authorization: `Bearer ${token}` },
