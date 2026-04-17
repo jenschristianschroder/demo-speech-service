@@ -19,6 +19,9 @@ param identityClientId string
 @description('Azure Speech region')
 param speechRegion string
 
+@description('Azure Speech endpoint (custom subdomain URL)')
+param speechEndpoint string
+
 @description('ACR login server')
 param acrLoginServer string
 
@@ -59,6 +62,7 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = {
           env: [
             { name: 'PORT', value: '3001' }
             { name: 'AZURE_SPEECH_REGION', value: speechRegion }
+            { name: 'AZURE_SPEECH_ENDPOINT', value: speechEndpoint }
             { name: 'AZURE_CLIENT_ID', value: identityClientId }
             { name: 'CORS_ORIGIN', value: '*' }
           ]

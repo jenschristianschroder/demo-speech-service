@@ -50,3 +50,6 @@ output id string = identity.id
 
 @description('Identity client ID')
 output clientId string = identity.properties.clientId
+
+@description('Speech resource endpoint (custom subdomain URL)')
+output speechEndpoint string = speechResource.properties.endpoint

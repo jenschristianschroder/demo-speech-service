@@ -63,6 +63,7 @@ module apiApp 'modules/aca-api.bicep' = {
     identityId: identity.outputs.id
     identityClientId: identity.outputs.clientId
     speechRegion: speechRegion
+    speechEndpoint: identity.outputs.speechEndpoint
     acrLoginServer: acr.outputs.loginServer
   }
 }
