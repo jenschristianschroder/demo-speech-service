@@ -14,30 +14,6 @@ if (!AZURE_SPEECH_ENDPOINT) {
 const credential = new DefaultAzureCredential();
 const SCOPE = 'https://cognitiveservices.azure.com/.default';
 
-/**
- * Returns a raw Azure AD bearer token for calling Cognitive Services REST APIs
- * (e.g. Speaker Recognition). Unlike getSpeechToken(), this is NOT exchanged
- * via the issueToken endpoint — the REST APIs accept a Bearer JWT directly.
- */
-export async function getAzureBearerToken(): Promise<string> {
-  if (!AZURE_SPEECH_ENDPOINT) {
-    throw new Error('Speech service is not configured. AZURE_SPEECH_ENDPOINT is required.');
-  }
-  const tokenResponse = await credential.getToken(SCOPE);
-  return tokenResponse.token;
-}
-
-/**
- * Returns the base URL for the Speaker Recognition REST API,
- * derived from the custom-subdomain endpoint.
- */
-export function getSpeakerRecognitionBaseUrl(): string {
-  if (!AZURE_SPEECH_ENDPOINT) {
-    throw new Error('Speech service is not configured. AZURE_SPEECH_ENDPOINT is required.');
-  }
-  return AZURE_SPEECH_ENDPOINT.replace(/\/+$/, '');
-}
-
 export async function getSpeechToken(): Promise<{ token: string; region: string }> {
   if (!AZURE_SPEECH_REGION || !AZURE_SPEECH_ENDPOINT) {
     throw new Error('Speech service is not configured. AZURE_SPEECH_REGION and AZURE_SPEECH_ENDPOINT are required.');

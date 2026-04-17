@@ -20,7 +20,7 @@ const VOICES = [
 ];
 
 const SAMPLE_TEXTS: Record<string, string> = {
-  'en-US': 'Azure AI Speech provides industry-leading speech-to-text, text-to-speech, speech translation, and speaker recognition capabilities. Experience the power of neural text-to-speech with natural-sounding voices.',
+  'en-US': 'Azure AI Speech provides industry-leading speech-to-text, text-to-speech, and speech translation capabilities. Experience the power of neural text-to-speech with natural-sounding voices.',
   'en-GB': 'Azure AI Speech provides industry-leading speech capabilities with natural-sounding neural voices.',
   'da-DK': 'Azure AI Speech tilbyder brancheførende tale-til-tekst, tekst-til-tale og taleoversættelse. Oplev kraften i neurale stemmer der lyder helt naturlige.',
   'de-DE': 'Azure AI Speech bietet branchenführende Sprach-zu-Text, Text-zu-Sprache und Sprachübersetzung mit natürlich klingenden neuronalen Stimmen.',
