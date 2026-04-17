@@ -1,5 +1,5 @@
 import React from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { FEATURES, SpeechFeature } from '../types';
 import SpeechToTextDemo from './demos/SpeechToTextDemo';
 import TextToSpeechDemo from './demos/TextToSpeechDemo';
@@ -20,7 +20,6 @@ const demoComponents: Record<SpeechFeature, React.FC> = {
 
 const DemoScreen: React.FC = () => {
   const { feature } = useParams<{ feature: string }>();
-  const navigate = useNavigate();
 
   const featureId = feature as SpeechFeature;
   const featureInfo = FEATURES.find((f) => f.id === featureId);
@@ -29,9 +28,6 @@ const DemoScreen: React.FC = () => {
   if (!featureInfo || !DemoComponent) {
     return (
       <div className="demo-screen">
-        <div className="demo-nav">
-          <button className="nav-btn" onClick={() => navigate('/features')} type="button">← Back</button>
-        </div>
         <div className="demo-content kiosk-container">
           <p className="demo-error">Unknown feature: {feature}</p>
         </div>
@@ -41,12 +37,6 @@ const DemoScreen: React.FC = () => {
 
   return (
     <div className="demo-screen">
-      <div className="demo-nav">
-        <button className="nav-btn" onClick={() => navigate('/features')} type="button">← Back</button>
-        <span className="demo-nav-title">{featureInfo.label}</span>
-        <button className="nav-btn" onClick={() => navigate('/')} type="button">Home</button>
-      </div>
-
       <div className="demo-content kiosk-container">
         <h1 className="demo-title">{featureInfo.label}</h1>
         <p className="demo-subtitle">{featureInfo.description}</p>
