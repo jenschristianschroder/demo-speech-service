@@ -262,30 +262,73 @@ const SpeakerRecognitionDemo: React.FC = () => {
   const handleDeleteSpeaker = useCallback(async (index: number) => {
     const speaker = speakers[index];
     try {
-      await fetch(`${API_BASE}/api/speaker/profiles/${encodeURIComponent(speaker.profileId)}`, {
+      setError(null);
+      setBusy(true);
+      const res = await fetch(`${API_BASE}/api/speaker/profiles/${encodeURIComponent(speaker.profileId)}`, {
         method: 'DELETE',
       });
-    } catch {
-      // Remove locally even if cloud delete fails
+      if (!res.ok && res.status !== 204) {
+        const body = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(body.error?.message || body.error || `Delete failed (${res.status})`);
+      }
+      setSpeakers((prev) => prev.filter((_, i) => i !== index));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete profile from Azure');
+    } finally {
+      setBusy(false);
     }
-    setSpeakers((prev) => prev.filter((_, i) => i !== index));
   }, [speakers]);
 
-  const handleClear = async () => {
-    for (const speaker of speakers) {
-      try {
-        await fetch(`${API_BASE}/api/speaker/profiles/${encodeURIComponent(speaker.profileId)}`, {
-          method: 'DELETE',
-        });
-      } catch {
-        // ignore cleanup errors
+  const [deleteAllStatus, setDeleteAllStatus] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const handleDeleteAllFromAzure = useCallback(async () => {
+    if (speakers.length === 0) return;
+    try {
+      setError(null);
+      setDeleteAllStatus('Deleting profiles from Azure…');
+      setBusy(true);
+
+      const profileIds = speakers.map((s) => s.profileId);
+      const res = await fetch(`${API_BASE}/api/speaker/profiles/delete-batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profileIds }),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(body.error?.message || body.error || `Batch delete failed (${res.status})`);
       }
+
+      const data = await res.json();
+      const failed = data.results?.filter((r: { deleted: boolean }) => !r.deleted) || [];
+
+      if (failed.length > 0) {
+        const failedIds = failed.map((f: { profileId: string }) => f.profileId).join(', ');
+        setError(`Some profiles could not be deleted from Azure: ${failedIds}`);
+        // Only remove successfully deleted profiles from local state
+        const deletedIds = new Set(
+          data.results
+            .filter((r: { deleted: boolean }) => r.deleted)
+            .map((r: { profileId: string }) => r.profileId),
+        );
+        setSpeakers((prev) => prev.filter((s) => !deletedIds.has(s.profileId)));
+      } else {
+        setSpeakers([]);
+      }
+
+      setIdentificationResult(null);
+      setEnrollStatus('');
+      setDeleteAllStatus(failed.length > 0 ? null : 'All profiles deleted from Azure successfully.');
+      setShowDeleteConfirm(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete profiles from Azure');
+      setDeleteAllStatus(null);
+    } finally {
+      setBusy(false);
     }
-    setSpeakers([]);
-    setIdentificationResult(null);
-    setEnrollStatus('');
-    setError(null);
-  };
+  }, [speakers]);
 
   const enrolledCount = speakers.filter((s) => s.enrollmentStatus.toLowerCase() === 'enrolled').length;
   const isRecording = enrollRecorder.isRecording || identifyRecorder.isRecording;
@@ -326,9 +369,6 @@ const SpeakerRecognitionDemo: React.FC = () => {
         <div className="demo-output">
           <div className="output-header">
             <h2 className="output-title">Speakers ({speakers.length})</h2>
-            <button className="output-clear-btn" onClick={handleClear} type="button">
-              Clear All
-            </button>
           </div>
           <div className="speaker-list">
             {speakers.map((speaker, index) => (
@@ -423,6 +463,61 @@ const SpeakerRecognitionDemo: React.FC = () => {
               Confidence: {(identificationResult.score * 100).toFixed(1)}%
             </span>
           </div>
+        </div>
+      )}
+
+      {/* Privacy: Delete All Profiles from Azure */}
+      {speakers.length > 0 && (
+        <div className="privacy-section">
+          <div className="privacy-header">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+            <h3 className="privacy-title">Privacy</h3>
+          </div>
+          <p className="privacy-text">
+            Voice profiles are stored in Azure. Delete all profiles to permanently
+            remove your voice data from the cloud.
+          </p>
+
+          {deleteAllStatus && <p className="privacy-success">{deleteAllStatus}</p>}
+
+          {!showDeleteConfirm ? (
+            <button
+              className="action-btn privacy-delete-btn"
+              onClick={() => setShowDeleteConfirm(true)}
+              type="button"
+              disabled={isRecording || busy}
+            >
+              Delete All Profiles from Azure
+            </button>
+          ) : (
+            <div className="privacy-confirm">
+              <p className="privacy-confirm-text">
+                This will permanently delete {speakers.length} voice profile{speakers.length !== 1 ? 's' : ''} from Azure. This cannot be undone.
+              </p>
+              <div className="privacy-confirm-actions">
+                <button
+                  className="action-btn privacy-delete-btn"
+                  onClick={handleDeleteAllFromAzure}
+                  type="button"
+                  disabled={busy}
+                >
+                  {busy ? 'Deleting…' : 'Confirm Delete'}
+                </button>
+                <button
+                  className="action-btn action-btn-secondary"
+                  onClick={() => setShowDeleteConfirm(false)}
+                  type="button"
+                  disabled={busy}
+                  style={{ minHeight: 40, padding: '8px 16px' }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </>

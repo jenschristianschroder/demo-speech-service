@@ -136,7 +136,7 @@ speakerRouter.post('/identify', async (req: Request, res: Response): Promise<voi
 
 /**
  * DELETE /api/speaker/profiles/:profileId
- * Delete a speaker profile.
+ * Delete a single speaker profile from Azure.
  */
 speakerRouter.delete('/profiles/:profileId', async (req: Request, res: Response): Promise<void> => {
   try {
@@ -166,5 +166,53 @@ speakerRouter.delete('/profiles/:profileId', async (req: Request, res: Response)
     console.error('Delete profile error:', err);
     const message = err instanceof Error ? err.message : 'Unknown error';
     res.status(500).json({ error: `Failed to delete speaker profile: ${message}` });
+  }
+});
+
+/**
+ * POST /api/speaker/profiles/delete-batch
+ * Delete multiple speaker profiles from Azure in one call.
+ * Body: { "profileIds": ["id1", "id2", ...] }
+ * Returns: { "results": [{ "profileId": "…", "deleted": true/false, "error": "…" }] }
+ */
+speakerRouter.post('/profiles/delete-batch', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const profileIds: string[] = req.body?.profileIds;
+    if (!Array.isArray(profileIds) || profileIds.length === 0) {
+      res.status(400).json({ error: 'profileIds array is required' });
+      return;
+    }
+
+    const token = await getAzureBearerToken();
+    const baseUrl = getSpeakerRecognitionBaseUrl();
+
+    const results = await Promise.all(
+      profileIds.map(async (profileId) => {
+        try {
+          const upstream = await fetch(
+            `${baseUrl}/speaker-recognition/identification/text-independent/profiles/${encodeURIComponent(profileId)}?api-version=2024-11-15`,
+            {
+              method: 'DELETE',
+              headers: { Authorization: `Bearer ${token}` },
+              signal: AbortSignal.timeout(10_000),
+            },
+          );
+
+          if (upstream.status === 204 || upstream.ok) {
+            return { profileId, deleted: true };
+          }
+          const body = await upstream.json().catch(() => ({}));
+          return { profileId, deleted: false, error: body?.error?.message || `HTTP ${upstream.status}` };
+        } catch (err) {
+          return { profileId, deleted: false, error: err instanceof Error ? err.message : 'Unknown error' };
+        }
+      }),
+    );
+
+    res.json({ results });
+  } catch (err) {
+    console.error('Batch delete error:', err);
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: `Failed to delete speaker profiles: ${message}` });
   }
 });

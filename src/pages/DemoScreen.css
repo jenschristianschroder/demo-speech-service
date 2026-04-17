@@ -661,3 +661,82 @@
   gap: 8px;
   flex-shrink: 0;
 }
+
+/* ─── Privacy / Delete Section ─────────────────────────────── */
+
+.privacy-section {
+  width: 100%;
+  margin-top: 32px;
+  padding: 20px;
+  background: #fef2f2;
+  border: 1.5px solid #fecaca;
+  border-radius: 12px;
+}
+
+.privacy-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: #991b1b;
+}
+
+.privacy-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #991b1b;
+  margin: 0;
+}
+
+.privacy-text {
+  font-size: 0.875rem;
+  color: #7f1d1d;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+.privacy-success {
+  font-size: 0.875rem;
+  color: #2e7d32;
+  font-weight: 500;
+  margin-bottom: 12px;
+}
+
+.privacy-delete-btn {
+  min-height: 44px;
+  padding: 10px 20px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #ffffff;
+  background: #c62828;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.privacy-delete-btn:active:not(:disabled) {
+  background: #991b1b;
+}
+
+.privacy-delete-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.privacy-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.privacy-confirm-text {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #991b1b;
+}
+
+.privacy-confirm-actions {
+  display: flex;
+  gap: 10px;
+}
