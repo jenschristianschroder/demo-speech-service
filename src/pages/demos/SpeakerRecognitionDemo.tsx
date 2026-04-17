@@ -1,13 +1,12 @@
 import React, { useState, useRef, useCallback } from 'react';
-import * as SpeechSDK from 'microsoft-cognitiveservices-speech-sdk';
-import { getSpeechToken } from '../../services/speechToken';
+
+const API_BASE = import.meta.env.VITE_API_BASE || '';
 
 interface EnrolledSpeaker {
   name: string;
   profileId: string;
-  profile: SpeechSDK.VoiceProfile;
-  enrollmentCount: number;
-  remainingSeconds: number;
+  enrollmentStatus: string;
+  remainingEnrollmentsSpeechLength: number;
 }
 
 interface IdentificationResult {
@@ -16,156 +15,238 @@ interface IdentificationResult {
   score: number;
 }
 
+/** Record PCM audio from microphone and return a WAV Blob (16 kHz, 16-bit, mono). */
+function useAudioRecorder() {
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const contextRef = useRef<AudioContext | null>(null);
+  const chunksRef = useRef<Float32Array[]>([]);
+  const [isRecording, setIsRecording] = useState(false);
+
+  const start = useCallback(async () => {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } });
+    const audioCtx = new AudioContext({ sampleRate: 16000 });
+    const source = audioCtx.createMediaStreamSource(stream);
+    const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+
+    chunksRef.current = [];
+    processor.onaudioprocess = (e) => {
+      const data = e.inputBuffer.getChannelData(0);
+      chunksRef.current.push(new Float32Array(data));
+    };
+
+    source.connect(processor);
+    processor.connect(audioCtx.destination);
+
+    mediaStreamRef.current = stream;
+    processorRef.current = processor;
+    contextRef.current = audioCtx;
+    setIsRecording(true);
+  }, []);
+
+  const stop = useCallback(async (): Promise<Blob> => {
+    processorRef.current?.disconnect();
+    mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+    await contextRef.current?.close();
+
+    const chunks = chunksRef.current;
+    chunksRef.current = [];
+    setIsRecording(false);
+
+    // Merge Float32 chunks → Int16
+    const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
+    const pcm = new Int16Array(totalLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+      for (let i = 0; i < chunk.length; i++) {
+        const s = Math.max(-1, Math.min(1, chunk[i]));
+        pcm[offset++] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      }
+    }
+
+    // Build WAV
+    const sampleRate = 16000;
+    const buffer = new ArrayBuffer(44 + pcm.length * 2);
+    const view = new DataView(buffer);
+    const writeStr = (o: number, str: string) => { for (let i = 0; i < str.length; i++) view.setUint8(o + i, str.charCodeAt(i)); };
+
+    writeStr(0, 'RIFF');
+    view.setUint32(4, 36 + pcm.length * 2, true);
+    writeStr(8, 'WAVE');
+    writeStr(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeStr(36, 'data');
+    view.setUint32(40, pcm.length * 2, true);
+
+    const pcmBytes = new Uint8Array(pcm.buffer);
+    new Uint8Array(buffer, 44).set(pcmBytes);
+
+    return new Blob([buffer], { type: 'audio/wav' });
+  }, []);
+
+  return { isRecording, start, stop };
+}
+
 const SpeakerRecognitionDemo: React.FC = () => {
   const [speakers, setSpeakers] = useState<EnrolledSpeaker[]>([]);
   const [newSpeakerName, setNewSpeakerName] = useState('');
-  const [isEnrolling, setIsEnrolling] = useState(false);
   const [enrollingIndex, setEnrollingIndex] = useState<number | null>(null);
   const [enrollStatus, setEnrollStatus] = useState('');
   const [isIdentifying, setIsIdentifying] = useState(false);
   const [identificationResult, setIdentificationResult] = useState<IdentificationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const profileClientRef = useRef<SpeechSDK.VoiceProfileClient | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const getProfileClient = useCallback(async () => {
-    const { token, region } = await getSpeechToken();
-    const speechConfig = SpeechSDK.SpeechConfig.fromAuthorizationToken(token, region);
-    return new SpeechSDK.VoiceProfileClient(speechConfig);
-  }, []);
+  const enrollRecorder = useAudioRecorder();
+  const identifyRecorder = useAudioRecorder();
 
+  // ─── Add Speaker ──────────────────────────────────────────
   const handleAddSpeaker = useCallback(async () => {
-    if (!newSpeakerName.trim()) return;
+    if (!newSpeakerName.trim() || busy) return;
     try {
       setError(null);
-      const client = await getProfileClient();
-      profileClientRef.current = client;
+      setBusy(true);
 
-      const profile = await new Promise<SpeechSDK.VoiceProfile>((resolve, reject) => {
-        client.createProfileAsync(
-          SpeechSDK.VoiceProfileType.TextIndependentIdentification,
-          'en-US',
-          (result) => resolve(result),
-          (err) => reject(new Error(err)),
-        );
+      const res = await fetch(`${API_BASE}/api/speaker/profiles`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ locale: 'en-US' }),
       });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(body.error?.message || body.error || `Failed (${res.status})`);
+      }
+
+      const data = await res.json();
 
       setSpeakers((prev) => [
         ...prev,
         {
           name: newSpeakerName.trim(),
-          profileId: profile.profileId,
-          profile,
-          enrollmentCount: 0,
-          remainingSeconds: 20,
+          profileId: data.profileId,
+          enrollmentStatus: data.enrollmentStatus ?? 'Enrolling',
+          remainingEnrollmentsSpeechLength: data.remainingEnrollmentsSpeechLength ?? 20,
         },
       ]);
       setNewSpeakerName('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create speaker profile');
+    } finally {
+      setBusy(false);
     }
-  }, [newSpeakerName, getProfileClient]);
+  }, [newSpeakerName, busy]);
 
-  const handleEnroll = useCallback(async (index: number) => {
+  // ─── Enroll ───────────────────────────────────────────────
+  const handleStartEnroll = useCallback(async (index: number) => {
     try {
       setError(null);
-      setIsEnrolling(true);
       setEnrollingIndex(index);
       setEnrollStatus('Recording… speak naturally for at least 20 seconds');
+      await enrollRecorder.start();
+    } catch (err) {
+      setEnrollingIndex(null);
+      setError(err instanceof Error ? err.message : 'Microphone access failed');
+    }
+  }, [enrollRecorder]);
 
-      const speaker = speakers[index];
-      const client = await getProfileClient();
-      profileClientRef.current = client;
+  const handleStopEnroll = useCallback(async () => {
+    if (enrollingIndex === null) return;
+    try {
+      setEnrollStatus('Uploading audio…');
+      const audioBlob = await enrollRecorder.stop();
+      const speaker = speakers[enrollingIndex];
 
-      const audioConfig = SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
+      const res = await fetch(
+        `${API_BASE}/api/speaker/profiles/${encodeURIComponent(speaker.profileId)}/enroll`,
+        { method: 'POST', body: audioBlob },
+      );
 
-      const result = await new Promise<SpeechSDK.VoiceProfileEnrollmentResult>((resolve, reject) => {
-        client.enrollProfileAsync(
-          speaker.profile,
-          audioConfig,
-          (res) => resolve(res),
-          (err) => reject(new Error(err)),
-        );
-      });
-
-      if (result.reason === SpeechSDK.ResultReason.EnrolledVoiceProfile) {
-        setSpeakers((prev) =>
-          prev.map((s, i) =>
-            i === index
-              ? { ...s, enrollmentCount: s.enrollmentCount + 1, remainingSeconds: 0 }
-              : s,
-          ),
-        );
-        setEnrollStatus('Enrollment complete!');
-      } else if (result.reason === SpeechSDK.ResultReason.EnrollingVoiceProfile) {
-        const remaining = result.privDetails?.remainingEnrollmentsSpeechLength
-          ?? (result as unknown as { enrollmentsLength?: number }).enrollmentsLength
-          ?? 0;
-        setSpeakers((prev) =>
-          prev.map((s, i) =>
-            i === index
-              ? {
-                  ...s,
-                  enrollmentCount: s.enrollmentCount + 1,
-                  remainingSeconds: Math.max(0, Math.ceil(remaining)),
-                }
-              : s,
-          ),
-        );
-        setEnrollStatus(`More speech needed. Continue speaking…`);
-      } else {
-        setEnrollStatus('Enrollment failed. Try speaking longer.');
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(body.error?.message || body.error || `Enrollment failed (${res.status})`);
       }
+
+      const data = await res.json();
+
+      setSpeakers((prev) =>
+        prev.map((s, i) =>
+          i === enrollingIndex
+            ? {
+                ...s,
+                enrollmentStatus: data.enrollmentStatus ?? s.enrollmentStatus,
+                remainingEnrollmentsSpeechLength: data.remainingEnrollmentsSpeechLength ?? 0,
+              }
+            : s,
+        ),
+      );
+
+      const enrolled = (data.enrollmentStatus ?? '').toLowerCase() === 'enrolled';
+      setEnrollStatus(enrolled ? 'Enrollment complete!' : 'More speech needed — enroll again.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Enrollment failed');
+      setEnrollStatus('');
     } finally {
-      setIsEnrolling(false);
       setEnrollingIndex(null);
     }
-  }, [speakers, getProfileClient]);
+  }, [enrollingIndex, speakers, enrollRecorder]);
 
-  const handleIdentify = useCallback(async () => {
-    const enrolledSpeakers = speakers.filter((s) => s.remainingSeconds === 0);
+  // ─── Identify ─────────────────────────────────────────────
+  const handleStartIdentify = useCallback(async () => {
+    const enrolledSpeakers = speakers.filter((s) => s.enrollmentStatus.toLowerCase() === 'enrolled');
     if (enrolledSpeakers.length === 0) {
       setError('At least one fully enrolled speaker is required for identification.');
       return;
     }
-
     try {
       setError(null);
       setIdentificationResult(null);
       setIsIdentifying(true);
+      await identifyRecorder.start();
+    } catch (err) {
+      setIsIdentifying(false);
+      setError(err instanceof Error ? err.message : 'Microphone access failed');
+    }
+  }, [speakers, identifyRecorder]);
 
-      const { token, region } = await getSpeechToken();
-      const speechConfig = SpeechSDK.SpeechConfig.fromAuthorizationToken(token, region);
-      const audioConfig = SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
+  const handleStopIdentify = useCallback(async () => {
+    try {
+      const audioBlob = await identifyRecorder.stop();
+      const enrolledSpeakers = speakers.filter((s) => s.enrollmentStatus.toLowerCase() === 'enrolled');
+      const profileIds = enrolledSpeakers.map((s) => s.profileId).join(',');
 
-      const model = SpeechSDK.SpeakerIdentificationModel.fromProfiles(
-        enrolledSpeakers.map((s) => s.profile),
+      const res = await fetch(
+        `${API_BASE}/api/speaker/identify?profileIds=${encodeURIComponent(profileIds)}`,
+        { method: 'POST', body: audioBlob },
       );
 
-      const recognizer = new SpeechSDK.SpeakerRecognizer(speechConfig, audioConfig);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(body.error?.message || body.error || `Identification failed (${res.status})`);
+      }
 
-      const result = await new Promise<SpeechSDK.SpeakerRecognitionResult>((resolve, reject) => {
-        recognizer.recognizeOnceAsync(
-          model,
-          (res) => {
-            recognizer.close();
-            resolve(res);
-          },
-          (err) => {
-            recognizer.close();
-            reject(new Error(err));
-          },
-        );
-      });
+      const data = await res.json();
 
-      if (result.reason === SpeechSDK.ResultReason.RecognizedSpeakers || result.reason === SpeechSDK.ResultReason.RecognizedSpeaker) {
-        const matchedId = result.profileId;
-        const matchedSpeaker = speakers.find((s) => s.profileId === matchedId);
+      if (data.profilesRanking && data.profilesRanking.length > 0) {
+        const best = data.profilesRanking[0];
+        const matchedSpeaker = speakers.find((s) => s.profileId === best.profileId);
         setIdentificationResult({
           speakerName: matchedSpeaker?.name || 'Unknown',
-          profileId: matchedId,
-          score: result.score,
+          profileId: best.profileId,
+          score: best.score ?? 0,
+        });
+      } else if (data.identifiedProfile?.profileId) {
+        const matchedSpeaker = speakers.find((s) => s.profileId === data.identifiedProfile.profileId);
+        setIdentificationResult({
+          speakerName: matchedSpeaker?.name || 'Unknown',
+          profileId: data.identifiedProfile.profileId,
+          score: data.identifiedProfile.score ?? 0,
         });
       } else {
         setError('Could not identify the speaker. Please try again.');
@@ -175,45 +256,82 @@ const SpeakerRecognitionDemo: React.FC = () => {
     } finally {
       setIsIdentifying(false);
     }
+  }, [speakers, identifyRecorder]);
+
+  // ─── Delete ───────────────────────────────────────────────
+  const handleDeleteSpeaker = useCallback(async (index: number) => {
+    const speaker = speakers[index];
+    try {
+      setError(null);
+      setBusy(true);
+      const res = await fetch(`${API_BASE}/api/speaker/profiles/${encodeURIComponent(speaker.profileId)}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok && res.status !== 204) {
+        const body = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(body.error?.message || body.error || `Delete failed (${res.status})`);
+      }
+      setSpeakers((prev) => prev.filter((_, i) => i !== index));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete profile from Azure');
+    } finally {
+      setBusy(false);
+    }
   }, [speakers]);
 
-  const handleDeleteSpeaker = useCallback(async (index: number) => {
+  const [deleteAllStatus, setDeleteAllStatus] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const handleDeleteAllFromAzure = useCallback(async () => {
+    if (speakers.length === 0) return;
     try {
-      const speaker = speakers[index];
-      const client = await getProfileClient();
-      await new Promise<SpeechSDK.VoiceProfileResult>((resolve, reject) => {
-        client.deleteProfileAsync(
-          speaker.profile,
-          (res) => resolve(res),
-          (err) => reject(new Error(err)),
-        );
+      setError(null);
+      setDeleteAllStatus('Deleting profiles from Azure…');
+      setBusy(true);
+
+      const profileIds = speakers.map((s) => s.profileId);
+      const res = await fetch(`${API_BASE}/api/speaker/profiles/delete-batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profileIds }),
       });
-      setSpeakers((prev) => prev.filter((_, i) => i !== index));
-    } catch {
-      // Remove locally even if cloud delete fails
-      setSpeakers((prev) => prev.filter((_, i) => i !== index));
-    }
-  }, [speakers, getProfileClient]);
 
-  const handleClear = async () => {
-    // Delete all profiles
-    for (const speaker of speakers) {
-      try {
-        const client = await getProfileClient();
-        await new Promise<SpeechSDK.VoiceProfileResult>((resolve) => {
-          client.deleteProfileAsync(speaker.profile, resolve, () => resolve({} as SpeechSDK.VoiceProfileResult));
-        });
-      } catch {
-        // ignore cleanup errors
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(body.error?.message || body.error || `Batch delete failed (${res.status})`);
       }
-    }
-    setSpeakers([]);
-    setIdentificationResult(null);
-    setEnrollStatus('');
-    setError(null);
-  };
 
-  const enrolledCount = speakers.filter((s) => s.remainingSeconds === 0).length;
+      const data = await res.json();
+      const failed = data.results?.filter((r: { deleted: boolean }) => !r.deleted) || [];
+
+      if (failed.length > 0) {
+        const failedIds = failed.map((f: { profileId: string }) => f.profileId).join(', ');
+        setError(`Some profiles could not be deleted from Azure: ${failedIds}`);
+        // Only remove successfully deleted profiles from local state
+        const deletedIds = new Set(
+          data.results
+            .filter((r: { deleted: boolean }) => r.deleted)
+            .map((r: { profileId: string }) => r.profileId),
+        );
+        setSpeakers((prev) => prev.filter((s) => !deletedIds.has(s.profileId)));
+      } else {
+        setSpeakers([]);
+      }
+
+      setIdentificationResult(null);
+      setEnrollStatus('');
+      setDeleteAllStatus(failed.length > 0 ? null : 'All profiles deleted from Azure successfully.');
+      setShowDeleteConfirm(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete profiles from Azure');
+      setDeleteAllStatus(null);
+    } finally {
+      setBusy(false);
+    }
+  }, [speakers]);
+
+  const enrolledCount = speakers.filter((s) => s.enrollmentStatus.toLowerCase() === 'enrolled').length;
+  const isRecording = enrollRecorder.isRecording || identifyRecorder.isRecording;
 
   return (
     <>
@@ -231,14 +349,14 @@ const SpeakerRecognitionDemo: React.FC = () => {
             value={newSpeakerName}
             onChange={(e) => setNewSpeakerName(e.target.value)}
             placeholder="Enter speaker name…"
-            disabled={isEnrolling || isIdentifying}
+            disabled={isRecording || busy}
             onKeyDown={(e) => e.key === 'Enter' && handleAddSpeaker()}
           />
           <button
             className="action-btn action-btn-primary"
             onClick={handleAddSpeaker}
             type="button"
-            disabled={!newSpeakerName.trim() || isEnrolling || isIdentifying}
+            disabled={!newSpeakerName.trim() || isRecording || busy}
             style={{ flex: 1 }}
           >
             Add Speaker
@@ -251,35 +369,45 @@ const SpeakerRecognitionDemo: React.FC = () => {
         <div className="demo-output">
           <div className="output-header">
             <h2 className="output-title">Speakers ({speakers.length})</h2>
-            <button className="output-clear-btn" onClick={handleClear} type="button">
-              Clear All
-            </button>
           </div>
           <div className="speaker-list">
             {speakers.map((speaker, index) => (
               <div key={speaker.profileId} className="speaker-card">
                 <div className="speaker-info">
                   <span className="speaker-name">{speaker.name}</span>
-                  <span className={`speaker-status ${speaker.remainingSeconds === 0 ? 'speaker-enrolled' : 'speaker-pending'}`}>
-                    {speaker.remainingSeconds === 0 ? 'Enrolled' : `~${speaker.remainingSeconds}s more needed`}
+                  <span className={`speaker-status ${speaker.enrollmentStatus.toLowerCase() === 'enrolled' ? 'speaker-enrolled' : 'speaker-pending'}`}>
+                    {speaker.enrollmentStatus.toLowerCase() === 'enrolled'
+                      ? 'Enrolled'
+                      : `~${Math.ceil(speaker.remainingEnrollmentsSpeechLength)}s more needed`}
                   </span>
                 </div>
                 <div className="speaker-actions">
-                  <button
-                    className="action-btn action-btn-secondary"
-                    style={{ minHeight: 40, padding: '8px 16px', fontSize: '0.875rem' }}
-                    onClick={() => handleEnroll(index)}
-                    type="button"
-                    disabled={isEnrolling || isIdentifying || speaker.remainingSeconds === 0}
-                  >
-                    {isEnrolling && enrollingIndex === index ? 'Recording…' : speaker.remainingSeconds === 0 ? 'Done' : 'Enroll'}
-                  </button>
+                  {enrollRecorder.isRecording && enrollingIndex === index ? (
+                    <button
+                      className="action-btn action-btn-primary"
+                      style={{ minHeight: 40, padding: '8px 16px', fontSize: '0.875rem' }}
+                      onClick={handleStopEnroll}
+                      type="button"
+                    >
+                      Stop Recording
+                    </button>
+                  ) : (
+                    <button
+                      className="action-btn action-btn-secondary"
+                      style={{ minHeight: 40, padding: '8px 16px', fontSize: '0.875rem' }}
+                      onClick={() => handleStartEnroll(index)}
+                      type="button"
+                      disabled={isRecording || busy || speaker.enrollmentStatus.toLowerCase() === 'enrolled'}
+                    >
+                      {speaker.enrollmentStatus.toLowerCase() === 'enrolled' ? 'Done' : 'Enroll'}
+                    </button>
+                  )}
                   <button
                     className="action-btn action-btn-secondary"
                     style={{ minHeight: 40, padding: '8px 16px', fontSize: '0.875rem', color: '#c62828' }}
                     onClick={() => handleDeleteSpeaker(index)}
                     type="button"
-                    disabled={isEnrolling || isIdentifying}
+                    disabled={isRecording || busy}
                   >
                     Remove
                   </button>
@@ -298,25 +426,31 @@ const SpeakerRecognitionDemo: React.FC = () => {
 
       {/* Identify Button */}
       <div className="demo-mic-section" style={{ marginTop: 16 }}>
-        <button
-          className={`mic-btn ${isIdentifying ? 'mic-btn-active' : ''}`}
-          onClick={isIdentifying ? undefined : handleIdentify}
-          type="button"
-          disabled={isIdentifying || enrolledCount < 1}
-        >
-          {isIdentifying ? (
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="10" />
-              <circle cx="12" cy="12" r="3" fill="currentColor" />
+        {identifyRecorder.isRecording ? (
+          <button
+            className="mic-btn mic-btn-active"
+            onClick={handleStopIdentify}
+            type="button"
+          >
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="6" y="6" width="12" height="12" rx="2" />
             </svg>
-          ) : (
+            Stop &amp; Identify
+          </button>
+        ) : (
+          <button
+            className={`mic-btn ${isIdentifying ? 'mic-btn-active' : ''}`}
+            onClick={handleStartIdentify}
+            type="button"
+            disabled={isIdentifying || isRecording || enrolledCount < 1}
+          >
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
               <circle cx="12" cy="7" r="4" />
             </svg>
-          )}
-          {isIdentifying ? 'Listening…' : 'Identify Speaker'}
-        </button>
+            Identify Speaker
+          </button>
+        )}
       </div>
 
       {/* Result */}
@@ -329,6 +463,61 @@ const SpeakerRecognitionDemo: React.FC = () => {
               Confidence: {(identificationResult.score * 100).toFixed(1)}%
             </span>
           </div>
+        </div>
+      )}
+
+      {/* Privacy: Delete All Profiles from Azure */}
+      {speakers.length > 0 && (
+        <div className="privacy-section">
+          <div className="privacy-header">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+            <h3 className="privacy-title">Privacy</h3>
+          </div>
+          <p className="privacy-text">
+            Voice profiles are stored in Azure. Delete all profiles to permanently
+            remove your voice data from the cloud.
+          </p>
+
+          {deleteAllStatus && <p className="privacy-success">{deleteAllStatus}</p>}
+
+          {!showDeleteConfirm ? (
+            <button
+              className="action-btn privacy-delete-btn"
+              onClick={() => setShowDeleteConfirm(true)}
+              type="button"
+              disabled={isRecording || busy}
+            >
+              Delete All Profiles from Azure
+            </button>
+          ) : (
+            <div className="privacy-confirm">
+              <p className="privacy-confirm-text">
+                This will permanently delete {speakers.length} voice profile{speakers.length !== 1 ? 's' : ''} from Azure. This cannot be undone.
+              </p>
+              <div className="privacy-confirm-actions">
+                <button
+                  className="action-btn privacy-delete-btn"
+                  onClick={handleDeleteAllFromAzure}
+                  type="button"
+                  disabled={busy}
+                >
+                  {busy ? 'Deleting…' : 'Confirm Delete'}
+                </button>
+                <button
+                  className="action-btn action-btn-secondary"
+                  onClick={() => setShowDeleteConfirm(false)}
+                  type="button"
+                  disabled={busy}
+                  style={{ minHeight: 40, padding: '8px 16px' }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </>
