@@ -73,6 +73,7 @@ jobs:
           echo "$DEPLOYMENT_OPERATIONS"
           echo "Scanning deployment operations payload for expected MANIFEST_UNKNOWN details."
 
+          # DEPLOYMENT_OPERATIONS is an array of failed operation statusMessage payloads, so this query starts with .[]?.
           if ! echo "$DEPLOYMENT_OPERATIONS" | jq -e '.[]? | .. | objects | .message? | strings | select(contains("MANIFEST_UNKNOWN"))' >/dev/null; then
             echo "::error::Infra deployment failed for an unexpected reason."
             exit 1
