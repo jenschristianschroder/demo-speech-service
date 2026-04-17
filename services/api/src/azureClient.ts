@@ -23,11 +23,12 @@ export async function getSpeechToken(): Promise<{ token: string; region: string 
       Authorization: `Bearer ${tokenResponse.token}`,
       'Content-Length': '0',
     },
+    signal: AbortSignal.timeout(10_000),
   });
 
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`Failed to issue speech token (${res.status}): ${body}`);
+    throw new Error(`Failed to issue speech token from ${issueTokenUrl} (${res.status}): ${body}`);
   }
 
   const speechToken = await res.text();
