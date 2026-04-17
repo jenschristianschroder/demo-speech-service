@@ -7,40 +7,6 @@
   padding-bottom: 48px;
 }
 
-.demo-nav {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 24px;
-}
-
-.nav-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 44px;
-  min-height: 44px;
-  padding: 8px 16px;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: #111111;
-  background: #f5f5f5;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.nav-btn:active {
-  background: #e0e0e0;
-}
-
-.demo-nav-title {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: #444444;
-}
-
 .demo-content {
   flex: 1;
   display: flex;
