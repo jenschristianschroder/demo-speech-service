@@ -615,3 +615,83 @@
   0%, 100% { opacity: 0.4; }
   50% { opacity: 1; }
 }
+
+/* ─── Language / Speaker Result Card ───────────────────────── */
+
+.language-result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 32px;
+  background: #fafafa;
+  border: 1.5px solid #222222;
+  border-radius: 12px;
+  text-align: center;
+}
+
+.language-name {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #111111;
+}
+
+.language-code {
+  font-size: 1rem;
+  font-weight: 500;
+  color: #666666;
+  padding: 4px 12px;
+  background: #f0f0f0;
+  border-radius: 4px;
+}
+
+/* ─── Speaker Recognition ──────────────────────────────────── */
+
+.speaker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.speaker-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  background: #fafafa;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 10px;
+}
+
+.speaker-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.speaker-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #111111;
+}
+
+.speaker-status {
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.speaker-enrolled {
+  color: #2e7d32;
+}
+
+.speaker-pending {
+  color: #f57c00;
+}
+
+.speaker-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}

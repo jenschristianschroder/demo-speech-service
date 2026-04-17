@@ -4,7 +4,8 @@ export type SpeechFeature =
   | 'speechTranslation'
   | 'pronunciationAssessment'
   | 'languageDetection'
-  | 'captioning';
+  | 'captioning'
+  | 'speakerRecognition';
 
 export interface FeatureInfo {
   id: SpeechFeature;
@@ -42,6 +43,11 @@ export const FEATURES: FeatureInfo[] = [
     id: 'captioning',
     label: 'Real-time Captioning',
     description: 'See live closed captions as you speak',
+  },
+  {
+    id: 'speakerRecognition',
+    label: 'Speaker Recognition',
+    description: 'Enroll voices and identify who is speaking',
   },
 ];
 

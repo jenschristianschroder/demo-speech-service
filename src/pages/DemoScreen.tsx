@@ -7,6 +7,7 @@ import SpeechTranslationDemo from './demos/SpeechTranslationDemo';
 import PronunciationDemo from './demos/PronunciationDemo';
 import LanguageDetectionDemo from './demos/LanguageDetectionDemo';
 import CaptioningDemo from './demos/CaptioningDemo';
+import SpeakerRecognitionDemo from './demos/SpeakerRecognitionDemo';
 import './DemoScreen.css';
 
 const demoComponents: Record<SpeechFeature, React.FC> = {
@@ -16,6 +17,7 @@ const demoComponents: Record<SpeechFeature, React.FC> = {
   pronunciationAssessment: PronunciationDemo,
   languageDetection: LanguageDetectionDemo,
   captioning: CaptioningDemo,
+  speakerRecognition: SpeakerRecognitionDemo,
 };
 
 const DemoScreen: React.FC = () => {
