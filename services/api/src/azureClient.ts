@@ -1,9 +1,14 @@
 import { DefaultAzureCredential } from '@azure/identity';
 
 const AZURE_SPEECH_REGION = process.env.AZURE_SPEECH_REGION;
+const AZURE_SPEECH_ENDPOINT = process.env.AZURE_SPEECH_ENDPOINT;
 
 if (!AZURE_SPEECH_REGION) {
   throw new Error('AZURE_SPEECH_REGION environment variable is required');
+}
+
+if (!AZURE_SPEECH_ENDPOINT) {
+  throw new Error('AZURE_SPEECH_ENDPOINT environment variable is required (custom subdomain URL, e.g. https://<name>.cognitiveservices.azure.com)');
 }
 
 const credential = new DefaultAzureCredential();
@@ -16,7 +21,10 @@ export async function getSpeechToken(): Promise<{ token: string; region: string 
   // 2. Exchange it for a short-lived Cognitive Services authorization token
   //    via the /sts/v1.0/issueToken endpoint. The Speech SDK's
   //    fromAuthorizationToken() expects this kind of token, not a raw AAD JWT.
-  const issueTokenUrl = `https://${AZURE_SPEECH_REGION}.api.cognitive.microsoft.com/sts/v1.0/issueToken`;
+  //    Token-based auth requires a custom subdomain endpoint, not the regional
+  //    endpoint (see https://aka.ms/cogsvc-authenticatewithtoken).
+  const baseUrl = AZURE_SPEECH_ENDPOINT!.replace(/\/+$/, '');
+  const issueTokenUrl = `${baseUrl}/sts/v1.0/issueToken`;
   const res = await fetch(issueTokenUrl, {
     method: 'POST',
     headers: {
