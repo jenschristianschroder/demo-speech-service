@@ -65,11 +65,13 @@ jobs:
           echo "$DEPLOYMENT_ERROR"
 
           if echo "$DEPLOYMENT_ERROR" | jq -e '.. | objects | .message? | strings | select(contains("MANIFEST_UNKNOWN"))' >/dev/null; then
+            echo "Detected expected MANIFEST_UNKNOWN in deployment error payload; continuing workflow."
             exit 0
           fi
 
           DEPLOYMENT_OPERATIONS="$(az deployment operation group list --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" --name "${{ env.INFRA_DEPLOYMENT_NAME }}" --query "[?properties.provisioningState=='Failed'].properties.statusMessage" -o json)"
           echo "$DEPLOYMENT_OPERATIONS"
+          echo "Scanning deployment operations payload for expected MANIFEST_UNKNOWN details."
 
           if ! echo "$DEPLOYMENT_OPERATIONS" | jq -e '.[]? | .. | objects | .message? | strings | select(contains("MANIFEST_UNKNOWN"))' >/dev/null; then
             echo "::error::Infra deployment failed for an unexpected reason."
