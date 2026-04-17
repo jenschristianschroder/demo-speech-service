@@ -65,6 +65,7 @@ jobs:
           echo "$DEPLOYMENT_ERROR"
 
           if echo "$DEPLOYMENT_ERROR" | jq -e '.. | objects | .message? | strings | select(contains("MANIFEST_UNKNOWN"))' >/dev/null; then
+            # Early return is intentional: expected bootstrap image-tag failures can be resolved by later image build/push steps.
             echo "Detected expected MANIFEST_UNKNOWN in deployment error payload; continuing workflow."
             exit 0
           fi
