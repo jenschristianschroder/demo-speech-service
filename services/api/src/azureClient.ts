@@ -4,17 +4,21 @@ const AZURE_SPEECH_REGION = process.env.AZURE_SPEECH_REGION;
 const AZURE_SPEECH_ENDPOINT = process.env.AZURE_SPEECH_ENDPOINT;
 
 if (!AZURE_SPEECH_REGION) {
-  throw new Error('AZURE_SPEECH_REGION environment variable is required');
+  console.error('AZURE_SPEECH_REGION environment variable is required');
 }
 
 if (!AZURE_SPEECH_ENDPOINT) {
-  throw new Error('AZURE_SPEECH_ENDPOINT environment variable is required (custom subdomain URL, e.g. https://<name>.cognitiveservices.azure.com)');
+  console.error('AZURE_SPEECH_ENDPOINT environment variable is required (custom subdomain URL, e.g. https://<name>.cognitiveservices.azure.com)');
 }
 
 const credential = new DefaultAzureCredential();
 const SCOPE = 'https://cognitiveservices.azure.com/.default';
 
 export async function getSpeechToken(): Promise<{ token: string; region: string }> {
+  if (!AZURE_SPEECH_REGION || !AZURE_SPEECH_ENDPOINT) {
+    throw new Error('Speech service is not configured. AZURE_SPEECH_REGION and AZURE_SPEECH_ENDPOINT are required.');
+  }
+
   // 1. Obtain a Microsoft Entra ID (AAD) access token
   const tokenResponse = await credential.getToken(SCOPE);
 
